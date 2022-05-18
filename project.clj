@@ -1,14 +1,14 @@
-(defproject app "0.1.0-SNAPSHOT"
-  :description "FIXME: write description"
-  :url "http://example.com/FIXME"
-  :license {:name "EPL-2.0 OR GPL-2.0-or-later WITH Classpath-exception-2.0"
-            :url "https://www.eclipse.org/legal/epl-2.0/"}
-  :dependencies [[org.clojure/clojure "1.10.3"]
-                 [ubergraph "0.8.2"]
-                 [org.clojure/tools.trace "0.7.9"]]
-  :repl-options {:init-ns app.core})
+;(defproject app "0.1.0-SNAPSHOT"
+;  :description "FIXME: write description"
+;  :url "http://example.com/FIXME"
+;  :license {:name "EPL-2.0 OR GPL-2.0-or-later WITH ;;Classpath-exception-2.0"
+           ; :url "https://www.eclipse.org/legal/epl-2.0/"}
+ ; :dependencies [[org.clojure/clojure "1.10.3"]
+  ;               [ubergraph "0.8.2"]
+  ;               [org.clojure/tools.trace "0.7.9"]]
+ ; :repl-options {:init-ns app.core})
 
-(require 'clojure.tools.trace)
+;(require 'clojure.tools.trace)
 ;; state 0 - not encountered at all
 ;; state 1 - in the open queue
 ;; state 2 - current vertex
@@ -189,10 +189,10 @@
 
 (load-file "e-roads-2020-full.clj")
 ;Wieght graph
-(println "Problem 1")
+(println "Problem 1 Non-w graph")
 (graph-dijkstra! g "Paris" "Prague" false)
 (graph-dijkstra! g "Newport, Wales" "Prague" false)
-
-;Non-w graph
+(println "_______________")
+(println "Problem 2 Wieght graph")
 (graph-dijkstra! g "Paris" "Prague" true)
 (graph-dijkstra! g "Newport, Wales" "Prague" true)
