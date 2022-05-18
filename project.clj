@@ -81,7 +81,7 @@
          best-distance nil
          best-vertex nil]
     (if (empty? queue)
-      best-vertex
+      (:label best-vertex)
       (let [queue-label (first queue)
             queue-vertex (get @(:vertices graph) queue-label)]
         (if (or (nil? best-vertex) (< @(:distance queue-vertex) best-distance))
@@ -140,7 +140,6 @@
                     (doseq [neighbor-label @(:neighbors vertex)]
                       (let [neighbor (get vertices neighbor-label)
                             next-distance (+ @(:distance vertex) (get-edge-weight graph (:label vertex) neighbor-label))]
-                        (println "There is bfs!")
                         (when (or (= @(:visited neighbor) 0) (> @(:distance neighbor) next-distance))
                           (dosync
                             (ref-set (:distance neighbor) next-distance))))))
@@ -158,15 +157,15 @@
             neighbor-vertex (get vertices neighbor-label)
             neighbor-distance @(:distance neighbor-vertex)
             edge-key (graph-edge-key vertex-label neighbor-label)
-            edges (:edges graph)
+            edges @(:edges graph)
             edge-weight (:weight (get edges edge-key))]
-        
+        ;;(println edge-weight distance-vertex neighbor-distance)
         (if (not use-weights)
-          (if (or (nil? best-vertex)(< neighbor-distance best-distance))
+          (if (or (nil? best-vertex) (< neighbor-distance best-distance))
             (recur (rest neighbors-labels) neighbor-distance neighbor-vertex)
             (recur (rest neighbors-labels) best-distance best-vertex))
           (if (= (- distance-vertex neighbor-distance) edge-weight)
-            (if (or (nil? best-vertex)(< neighbor-distance best-distance))
+            (if (or (nil? best-vertex) (< neighbor-distance best-distance))
               (recur (rest neighbors-labels) neighbor-distance neighbor-vertex)
               (recur (rest neighbors-labels) best-distance best-vertex))
             (recur (rest neighbors-labels) best-distance best-vertex)))))))
@@ -177,6 +176,7 @@
     (if (= @(:visited start-vertex) 0)
       (println "There is no path!")
       (loop [current-vertex start-vertex]
+        ;(println current-vertex)
         (println (:label current-vertex))
         (if (> @(:distance current-vertex) 0)
           (recur (best-neighbor graph vertices current-vertex use-weights)))))))
@@ -190,10 +190,9 @@
 (load-file "e-roads-2020-full.clj")
 ;Wieght graph
 (println "Problem 1")
-(graph-dijkstra! g "Berlin" "Prague" false)
+(graph-dijkstra! g "Paris" "Prague" false)
 (graph-dijkstra! g "Newport, Wales" "Prague" false)
 
 ;Non-w graph
-(graph-dijkstra! g "Berlin" "Prague" true)
+(graph-dijkstra! g "Paris" "Prague" true)
 (graph-dijkstra! g "Newport, Wales" "Prague" true)
-
