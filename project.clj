@@ -1,17 +1,7 @@
-;(defproject app "0.1.0-SNAPSHOT"
-;  :description "FIXME: write description"
-;  :url "http://example.com/FIXME"
-;  :license {:name "EPL-2.0 OR GPL-2.0-or-later WITH ;;Classpath-exception-2.0"
-           ; :url "https://www.eclipse.org/legal/epl-2.0/"}
- ; :dependencies [[org.clojure/clojure "1.10.3"]
-  ;               [ubergraph "0.8.2"]
-  ;               [org.clojure/tools.trace "0.7.9"]]
- ; :repl-options {:init-ns app.core})
 
-;(require 'clojure.tools.trace)
-;; state 0 - not encountered at all
-;; state 1 - in the open queue
-;; state 2 - current vertex
+;; state 0 - not visited
+;; state 1 - in open queue
+;; state 2 - present ver
 ;; state 3 - visited
 
 
@@ -76,41 +66,42 @@
   (filter
     (fn [vertex] (not (= vertex label))) queue))
 
-(defn al-papi [queue graph] ;;looks for the best vertex and dist
+(defn al_papi [queue graph] ;;looks for the best vertex and dist
   (loop [queue queue
-         best-distance nil
+         bestD nil
          best-vertex nil]
     (if (empty? queue)
       (:label best-vertex)
       (let [queue-label (first queue)
             queue-vertex (get @(:vertices graph) queue-label)]
-        (if (or (nil? best-vertex) (< @(:distance queue-vertex) best-distance))
+        (if (or (nil? best-vertex) (< @(:distance queue-vertex) bestD))
           (recur (rest queue) @(:distance queue-vertex) queue-vertex)
-          (recur (rest queue) best-distance best-vertex))))))
+          (recur (rest queue) bestD best-vertex))))))
 
-(defn graph-bfs!
+(defn graph_bfs! ;;actual bfs
   ([graph]
-   (graph-bfs! graph (first (keys @(:vertices graph)))))
+   (graph_bfs! graph (first (keys @(:vertices graph)))))
   ([graph start]
-   (graph-bfs! graph start (fn [vertex] nil)))
+   (graph_bfs! graph start (fn [vertex] nil)))
   ([graph start func]
-   (graph-bfs! graph start func first))
+   (graph_bfs! graph start func first))
   ([graph start func func-m]
    (let [vertices @(:vertices graph)]
      (loop [queue (list start)]
        (when (not (empty? queue))
-         (let [current-label (if (= func-m al-papi)(func-m queue graph)(func-m queue))
-               rest-queue (rest-queue! queue current-label)
-               current-vertex (get vertices current-label)
-               visited-status (:visited current-vertex)
-               current-neighbors @(:neighbors current-vertex)
+         (let [present-label (if (= func-m al_papi)(func-m queue graph)(func-m queue))
+               rest-queue (rest-queue! queue present-label)
+               present-vertex (get vertices present-label)
+               present-neighbors @(:neighbors present-vertex)
+               visited-status (:visited present-vertex)
+               
                unseen-neighbors (filter
                                   (fn [label]
                                     (= @(:visited (get vertices label)) 0))
-                                  current-neighbors)
+                                  present-neighbors)
                ]
            (dosync (ref-set visited-status 2))
-           (func current-vertex)
+           (func present-vertex)
            (dosync (ref-set visited-status 3))
            (doseq [label unseen-neighbors]
              (dosync
@@ -118,14 +109,14 @@
            (recur (concat rest-queue unseen-neighbors))))))))
 
 
-(defn graph-dijkstra-mark! [graph finish use-weights]
+(defn dijkstra_mark! [graph finish use-weights]
   (let [vertices @(:vertices graph)
         start-vertex (get vertices finish)]
     (graph-reset! graph)
     (dosync
       (ref-set (:distance start-vertex) 0))
     (if (not use-weights)
-      (graph-bfs! graph
+      (graph_bfs! graph
                   finish
                   (fn [vertex]
                     (let [next-distance (inc @(:distance vertex))]
@@ -134,7 +125,7 @@
                           (if (= @(:visited neighbor) 0)
                             (dosync
                               (ref-set (:distance neighbor) next-distance))))))))
-      (graph-bfs! graph
+      (graph_bfs! graph
                   finish
                   (fn [vertex]
                     (doseq [neighbor-label @(:neighbors vertex)]
@@ -143,11 +134,11 @@
                         (when (or (= @(:visited neighbor) 0) (> @(:distance neighbor) next-distance))
                           (dosync
                             (ref-set (:distance neighbor) next-distance))))))
-                  al-papi))))
+                  al_papi))))
 
-(defn best-neighbor [graph vertices vertex use-weights]
+(defn best_neighbor [graph vertices vertex use-weights] ;;looking for the best neighbor 
   (loop [neighbors-labels @(:neighbors vertex)
-         best-distance nil
+         bestD nil
          best-vertex nil]
     (if (empty? neighbors-labels)
       best-vertex
@@ -161,38 +152,49 @@
             edge-weight (:weight (get edges edge-key))]
         ;;(println edge-weight distance-vertex neighbor-distance)
         (if (not use-weights)
-          (if (or (nil? best-vertex) (< neighbor-distance best-distance))
+          (if (or (nil? best-vertex) (< neighbor-distance bestD))
             (recur (rest neighbors-labels) neighbor-distance neighbor-vertex)
-            (recur (rest neighbors-labels) best-distance best-vertex))
+            (recur (rest neighbors-labels) bestD best-vertex))
           (if (= (- distance-vertex neighbor-distance) edge-weight)
-            (if (or (nil? best-vertex) (< neighbor-distance best-distance))
+            (if (or (nil? best-vertex) (< neighbor-distance bestD))
               (recur (rest neighbors-labels) neighbor-distance neighbor-vertex)
-              (recur (rest neighbors-labels) best-distance best-vertex))
-            (recur (rest neighbors-labels) best-distance best-vertex)))))))
+              (recur (rest neighbors-labels) bestD best-vertex))
+            (recur (rest neighbors-labels) bestD best-vertex)))))))
 
-(defn graph-dijkstra-trace [graph start use-weights]
+(defn dijkstra_trace [graph start use-weights] ;;the trace
   (let [vertices @(:vertices graph)
         start-vertex (get vertices start)]
     (if (= @(:visited start-vertex) 0)
       (println "There is no path!")
-      (loop [current-vertex start-vertex]
-        ;(println current-vertex)
-        (println (:label current-vertex))
-        (if (> @(:distance current-vertex) 0)
-          (recur (best-neighbor graph vertices current-vertex use-weights)))))))
+      (loop [present-vertex start-vertex]
+        ;(println present-vertex)
+        (println (:label present-vertex) )
+        (if (> @(:distance present-vertex) 0)
+          (recur (best_neighbor graph vertices present-vertex use-weights)))))))
 
-(defn graph-dijkstra! [graph start finish weighted]
+(defn graph_dijkstra! [graph start finish weighted]
   (graph-reset! graph)
-  (graph-dijkstra-mark! graph finish weighted)
-  (graph-dijkstra-trace graph start weighted))
+  (dijkstra_mark! graph finish weighted)
+  (dijkstra_trace graph start weighted))
 
 
 (load-file "e-roads-2020-full.clj")
 ;Wieght graph
-(println "Problem 1 Non-w graph")
-(graph-dijkstra! g "Paris" "Prague" false)
-(graph-dijkstra! g "Newport, Wales" "Prague" false)
+(println " 
+          P
+          ")
+(println "Problem 1 Non-wieght graph: From: Paris | To: Prague")
+(graph_dijkstra! g "Paris" "Prague" false)
+(println " ")
+(println "Problem 1.1 Non-wieght graph without path: From: Newport, Wales | To: Prague")
+(graph_dijkstra! g "Newport, Wales" "Prague" false)
+(println "         
+          ")
 (println "_______________")
-(println "Problem 2 Wieght graph")
-(graph-dijkstra! g "Paris" "Prague" true)
-(graph-dijkstra! g "Newport, Wales" "Prague" true)
+(println "          
+          ")
+(println "Problem 2 Wieght graph: From: Paris | To: Prague")
+(graph_dijkstra! g "Paris" "Prague" true)
+(println " ")
+(println "Problem 2.1 Wieght graph without a path: From: Newport, Wales | To: Prague")
+(graph_dijkstra! g "Newport, Wales" "Prague" true)
