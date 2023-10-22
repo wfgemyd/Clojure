@@ -85,58 +85,61 @@
 
 
 (defn bfs-find-plans [graph start-label end-city-spec budget max-flights]
-  ; Get the start vertex from the graph based on the start label
-  (let [start-vertex (get @(:vertices graph) start-label)
-        ; Initialize a queue to store paths with the starting path
-        queue (ref [[start-label]])
-        ; Initialize a set to keep track of visited vertices
-        visited (ref #{})
-        ; Initialize an empty list to store plans
+  ; Compute the cost of the start city (self-loop).
+  (let [start-cost (get-edge-weight graph start-label start-label)
+        ; Initialize a queue of paths with the correct start cost.
+        queue (ref [[{:vertex start-label :cost (or start-cost 0)}]])
+        ; Initialize an empty list to store valid plans.
         plans (ref [])]
-    ; Set the cost-so-far of the start vertex to 0 within a transaction
-    (dosync (ref-set (:cost-so-far start-vertex) 0))
 
-    ; While the queue is not empty
+    ; Continue searching as long as there are paths in the queue.
     (while (not (empty? @queue))
-      ; Get the first path from the queue
-      (let [path (first @queue)
-            ; Get the current vertex from the last element of the path
-            current-vertex (last path)
-            ; Get data for the current vertex from the graph
-            current-vertex-data (get @(:vertices graph) current-vertex)]
-        ; Check if data exists for the current vertex
-        (when current-vertex-data
-          ; Get the current cost from the current vertex data
-          (let [current-cost @(:cost-so-far current-vertex-data)
-                ; Get neighbors of the current vertex
-                neighbors (graph-get-neighbors graph current-vertex)]
-            ; Remove the first path from the queue within a transaction
-            (dosync (ref-set queue (rest @queue)))
-            ; Check if the current vertex meets the criteria for a plan
-            (when (and (or (and (keyword? end-city-spec) (= (:city-type current-vertex-data) end-city-spec))
-                           (and (string? end-city-spec) (= current-vertex end-city-spec)))
-                       (<= current-cost budget)
-                       (<= (count path) max-flights))
-              ; Add the current path and cost to the list of plans within a transaction
-              (dosync (ref-set plans (conj @plans {:path path :cost current-cost}))))
-            ; Iterate through the neighbors of the current vertex
+
+      ; Dequeue the first path (FIFO).
+      (let [path (first @queue)]
+
+        ; Remove the path from the queue.
+        (dosync (ref-set queue (rest @queue)))
+
+        ; Extract the current vertex and its cost from the last map in the path.
+        (let [current-vertex (-> path last :vertex)
+              current-cost (-> path last :cost)
+              ; Fetch the data associated with the current vertex from the graph.
+              current-vertex-data (get @(:vertices graph) current-vertex)]
+
+          ; Print the current exploring path for debugging purposes.
+          ;(println "Exploring path:" (vec (map :vertex path)))
+
+          ; Check if the current vertex is a valid endpoint (either matches the desired type or name)
+          ; and the path respects the constraints (cost and number of flights).
+          (when (and (or (and (keyword? end-city-spec) (= (:city-type current-vertex-data) end-city-spec))
+                         (and (string? end-city-spec) (= current-vertex end-city-spec)))
+                     (<= current-cost budget)
+                     (<= (count path) max-flights))
+
+            ; If it's a valid plan, add it to the list of plans.
+            (dosync (ref-set plans (conj @plans {:path (map (fn [p] {:city (:vertex p) :cost (:cost p)}) path) :total-cost current-cost}))))
+
+          ; Get the neighbors of the current vertex.
+          (let [neighbors (graph-get-neighbors graph current-vertex)]
             (doseq [neighbor neighbors]
-              ; Get data for the neighbor vertex
-              (let [neighbor-data (get @(:vertices graph) neighbor)
-                    ; Get the edge cost from the current vertex to the neighbor
-                    edge-cost (get-edge-weight graph current-vertex neighbor)
-                    ; Calculate the total cost to reach the neighbor
+
+              ; Determine the cost to travel from the current vertex to this neighbor.
+              (let [edge-cost (get-edge-weight graph current-vertex neighbor)
                     total-cost (+ current-cost edge-cost)]
-                ; Check if the neighbor has not been visited and the total cost is within budget
-                (when (and (not (contains? @visited neighbor))
-                           (<= total-cost budget))
-                  ; Update the cost-so-far for the neighbor within a transaction
-                  ; Add the neighbor to the visited set
-                  ; Add a new path to the queue that includes the neighbor
+
+                ; Check if the neighbor hasn't been visited in this path,
+                ; the path respects the budget, and the number of flights.
+                (when (and (not (some #(= neighbor (:vertex %)) path))
+                           (<= total-cost budget)
+                           (< (count path) max-flights))
+
+                  ; If valid, enqueue a new path that includes this neighbor.
+                  ; Here we update the cost for the new city in the path to be the cumulative cost up to that city.
                   (dosync
-                    (ref-set (:cost-so-far neighbor-data) total-cost)
-                    (alter visited conj neighbor)
-                    (alter queue conj (conj path neighbor))))))))))
+                    (alter queue conj (conj path {:vertex neighbor :cost total-cost}))))))))))
+
+    ; Return the list of valid plans.
     @plans))
 
 ; Sorting function for the plans
@@ -152,35 +155,92 @@
     (sort-by :cost raw-plans)))
 
 
-(defn print-plans [plans end-city-type max-flights]
-  (doseq [plan plans]
+
+
+(defn print-plan [plan max-flights end-city-type]
+  (let [formatted-path (->> (:path plan)
+                            (map (fn [p] (str (p :city) " (" (p :cost) ")")))
+                            (clojure.string/join " --> "))
+        end-city (last (:path plan))]
+    (println "----------------------------------------------------")
     (if (and (= max-flights 3) (not= end-city-type "resort"))
       (println "The destination isn't suitable for families.")
-      (let [path-str (clojure.string/join " --> " (:path plan))
-            total (:cost plan)
-            end-city (last (:path plan))]
-        (println (str path-str " --> " end-city "\nTotal: " total "\n-----------------------------------------"))))))
+      (do
+        (println formatted-path)
+        (println "Total Cost: " (:total-cost plan))
+        (println "Amount of flights:" (dec (count (:path plan))))
+        (println "----------------------------------------------------")))))
+
+(defn format-path [path]
+  (let [formatted-path (map (fn [{:keys [city cost]}]
+                              (str city " (" cost ")"))
+                            path)]
+    (str "Path: " (clojure.string/join " --> " formatted-path))))
+
+(defn reverse-engineer-costs [path]                         ;;just lazy to fix it in the BFS it is basically reassigning the cost
+  (loop [remaining-path (reverse path) ; Reverse the path so we start from the end
+         last-cost (-> path last :cost)
+         result []]
+    (if (empty? remaining-path)
+      (reverse result) ; Return the corrected path order
+      (let [current-cost (or (-> remaining-path first :cost) 0)
+            calculated-cost (- last-cost current-cost)]
+        (recur (rest remaining-path) current-cost
+               (conj result (assoc (first remaining-path) :cost calculated-cost)))))))
 
 
-(defn format-output [plans]
+(defn print-reversed-plans [plans]
+  (println "Found valid plans:")
+  (println (clojure.string/join "" (repeat 50 "-")))
+
   (doseq [plan plans]
-    (println "Path:" (clojure.string/join " --> " (:path plan))
-             "Cost:" (get plan :cost))))
+    (let [{:keys [path total-cost]} plan
+          reversed-path (reverse-engineer-costs path)
+          formatted-path (format-path reversed-path)]
 
+      ; Print the path
+      (println formatted-path)
 
+      ; Print the total cost
+      (println "Total Cost:" total-cost)
 
+      ; Print the number of flights
+      (println "Amount of flights:" (count path))
+
+      ; Print separator
+      (println (clojure.string/join "" (repeat 50 "-"))))))
 
 (let [g (make-graph)]
+  ; Adding cities
   (graph-add-vertex! g "Munich" 48.1351 11.5820 "regular")
   (graph-add-vertex! g "Biarritz" 43.4832 -1.5586 "resort")
   (graph-add-vertex! g "Paris" 48.8566 2.3522 "landmark")
+  (graph-add-vertex! g "Berlin" 52.5200 13.4050 "landmark")
+  (graph-add-vertex! g "Madrid" 40.4168 -3.7038 "regular")
+  (graph-add-vertex! g "Lisbon" 38.7223 -9.1393 "resort")
+
+  ; Adding edges/connections
   (graph-add-edge! g "Munich" "Biarritz" "M-B" 500)
   (graph-add-edge! g "Biarritz" "Paris" "B-P" 300)
   (graph-add-edge! g "Munich" "Paris" "M-P" 700)
-  (let [plans (find-and-sort-plans g "Munich" "Paris" 1000 3)]
+  (graph-add-edge! g "Munich" "Berlin" "M-Ber" 400)
+  (graph-add-edge! g "Berlin" "Paris" "Ber-P" 500)
+  (graph-add-edge! g "Munich" "Madrid" "M-Mad" 900)
+  (graph-add-edge! g "Madrid" "Lisbon" "Mad-L" 200)
+  (graph-add-edge! g "Lisbon" "Paris" "L-P" 800)
+
+  ; Scenario for Families of 3 aiming for a landmark city
+  (let [plans (find-and-sort-plans g "Munich" "Paris" 700 3)] ;;change the price to 2100 to see the difference
+    (println "Families of 3 aiming for a landmark city:")
     (if (empty? plans)
       (println "No valid plans found!")
       (do
-        (println "Found valid plans:")
-        (format-output plans))))) ; assuming format-output prints each plan
+        (print-reversed-plans plans))))
 
+  ; Scenario for Organized tours of 5 aiming for a resort town
+  (let [plans (find-and-sort-plans g "Munich" "Biarritz" 1000 4)] ;;cahnge the price to 5000 to see the difference
+    (println "Organized tours of 5 aiming for a resort town:")
+    (if (empty? plans)
+      (println "No valid plans found!")
+      (do
+        (print-reversed-plans plans)))))
