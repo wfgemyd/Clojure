@@ -214,11 +214,12 @@
 
 (defn format-path [path]
   (let [formatted-path (map (fn [{:keys [city cost]}]
-                              (str city " (" cost ")"))
+                              (str city (if (zero? cost) "" (str " (" cost ")"))))
                             path)]
     (str "Path: " (clojure.string/join " --> " formatted-path))))
 
-(defn reverse-engineer-costs [path]                         ;;just lazy to fix it in the BFS it is basically reassigning the cost
+
+(defn reverse-engineer-costs [path] ;;just lazy to fix it in the BFS it is basically reassigning the cost
   (loop [remaining-path (reverse path) ; Reverse the path so we start from the end
          last-cost (-> path last :cost)
          result []]
@@ -246,15 +247,13 @@
       (println "Total Cost:" total-cost)
 
       ; Print the number of flights
-      (println "Amount of flights:" (- (count path) 1) )
+      (println "Amount of flights:" (count path))
 
       ; Print separator
       (println (clojure.string/join "" (repeat 50 "-"))))))
 
-
 (defn get-all-cities [graph]
   (keys @(:vertices graph)))
-
 
 (defn choose-city [prompt graph]
   (let [cities (get-all-cities graph)]
@@ -269,8 +268,6 @@
           (println "Invalid choice. Please choose again.")
           (recur prompt graph))))))
 
-
-
 (defn get-user-input [graph]
   (let [start-city (choose-city "Where are you located?" graph)
         end-city (choose-city "Where do you want to go to?" graph)]
@@ -279,11 +276,6 @@
       (println "How many flights can you suffer?")
       (let [max-flights (Integer/parseInt (read-line))]
         [start-city end-city budget max-flights]))))
-
-
-
-
-
 
 (defn main []
   (let [g (make-graph)]
