@@ -172,11 +172,16 @@
   ; Get the city type for the given city name.
   (let [end-city-type  (get-city-type graph end-city-name)
         traveler-type (if (= end-city-type "resort") "family" "group")
-        ; Strictly set a hard flight limit based on traveler-type.
-        hard-max-flights (case traveler-type
-                           "family" 3
-                           "group" 5
-                           (throw (Exception. (str "Invalid traveler type detected: " traveler-type))))]
+        ; Get the valid range based on traveler type.
+        valid-range (case traveler-type
+                      "family" [1 3]
+                      "group" [1 5]
+                      (throw (Exception. (str "Invalid traveler type detected: " traveler-type))))
+        ; Check if the input max-flights is within the valid range.
+        hard-max-flights (if (and (>= max-flights (first valid-range))
+                                  (<= max-flights (second valid-range)))
+                           max-flights
+                           (second valid-range))]
 
     (println end-city-type, traveler-type, hard-max-flights, end-city-name)
     ; Handle different traveler types
@@ -230,27 +235,42 @@
         (recur (rest remaining-path) current-cost
                (conj result (assoc (first remaining-path) :cost calculated-cost)))))))
 
+(defn print-ascii-ticket [formatted-path total-cost flights]
+  (let [art ["|d888888P dP  a88888b. dP     dP  88888888b d888888P"
+             "|   88    88 d8'   `88 88   .d8'  88           88   "
+             "|   88    88 88        88aaa8P'  a88aaaa       88   "
+             "|   88    88 88        88   `8b.  88           88   "
+             "|   88    88 Y8.   .88 88     88  88           88   "
+             "|   dP    dP  Y88888P' dP     dP  88888888P    dP   "]
 
-(defn print-reversed-plans [plans]
-  (println "Found valid plans:")
-  (println (clojure.string/join "" (repeat 50 "-")))
+        info [(str "Path: " formatted-path)
+              (str "Total Cost: " total-cost)
+              (str "Amount of flights: " flights)]
 
-  (doseq [plan plans]
-    (let [{:keys [path total-cost]} plan
-          reversed-path (reverse-engineer-costs path)
-          formatted-path (format-path reversed-path)]
+        max-info-len (apply max (map count info))
+        max-art-len (count (first art))
+        total-len (+ max-art-len max-info-len 5)]
+    (println (clojure.string/join "" (repeat total-len "-")))
+    (doseq [i (range (count art))]
+      (let [info-line (nth info (- i 1) nil)]
+        (println (str (nth art i) " | "
+                      (if info-line
+                        (str info-line (apply str (repeat (- max-info-len (count info-line)) " ")))
+                        (apply str (repeat max-info-len " ")))
+                      " |"))))
+      ; Print separator at the end only
+      (println (clojure.string/join "" (repeat total-len "-")))))
 
-      ; Print the path
-      (println formatted-path)
 
-      ; Print the total cost
-      (println "Total Cost:" total-cost)
+  (defn print-reversed-plans [plans]
+    (doseq [plan plans]
+      (let [{:keys [path total-cost]} plan
+            reversed-path (reverse-engineer-costs path)
+            formatted-path (format-path reversed-path)]
+        (print-ascii-ticket formatted-path total-cost (count path)))))
 
-      ; Print the number of flights
-      (println "Amount of flights:" (count path))
 
-      ; Print separator
-      (println (clojure.string/join "" (repeat 50 "-"))))))
+
 
 (defn get-all-cities [graph]
   (keys @(:vertices graph)))
@@ -313,10 +333,10 @@
         (let [[start-city end-city budget max-flights] (get-user-input g)
               plans (find-and-sort-plans g start-city end-city budget max-flights)]
           (println (str "Searching for plans from " start-city " to " end-city " with a budget of " budget " and maximum " max-flights " flights:"))
-          (if (empty? plans)
+          ;(println plans)
+          (if (nil? (first plans))
             (println "No valid plans found!")
-            (do
-              (print-reversed-plans plans))))))
+            (print-reversed-plans plans)))))
 
 
 
