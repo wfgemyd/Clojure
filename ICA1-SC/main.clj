@@ -251,51 +251,81 @@
       ; Print separator
       (println (clojure.string/join "" (repeat 50 "-"))))))
 
-(let [g (make-graph)]
-  ; Adding cities
-  (graph-add-vertex! g "Munich" 48.1351 11.5820 "regular")
-  (graph-add-vertex! g "Biarritz" 43.4832 -1.5586 "resort")
-  (graph-add-vertex! g "Paris" 48.8566 2.3522 "resort")
-  (graph-add-vertex! g "Berlin" 52.5200 13.4050 "landmark")
-  (graph-add-vertex! g "Madrid" 40.4168 -3.7038 "regular")
-  (graph-add-vertex! g "Lisbon" 38.7223 -9.1393 "landmark")
-  (graph-add-vertex! g "Barcelona" 41.3851 2.1734 "regular")
-  (graph-add-vertex! g "Rome" 41.9028 12.4964 "landmark")
-  (graph-add-vertex! g "Amsterdam" 52.3676 4.9041 "regular")
-  (graph-add-vertex! g "Vienna" 48.2082 16.3738 "resort")
 
-  ; Adding edges/connections to make the routes more complex and potentially longer
-  (graph-add-edge! g "Munich" "Biarritz" "M-B" 500)
-  (graph-add-edge! g "Biarritz" "Paris" "B-P" 300)
-  (graph-add-edge! g "Munich" "Paris" "M-P" 700)
-  (graph-add-edge! g "Munich" "Berlin" "M-Ber" 400)
-  (graph-add-edge! g "Berlin" "Paris" "Ber-P" 500)
-  (graph-add-edge! g "Munich" "Madrid" "M-Mad" 900)
-  (graph-add-edge! g "Madrid" "Lisbon" "Mad-L" 200)
-  (graph-add-edge! g "Lisbon" "Paris" "L-P" 800)
-  (graph-add-edge! g "Munich" "Barcelona" "M-Bar" 600)
-  (graph-add-edge! g "Barcelona" "Rome" "Bar-R" 450)
-  (graph-add-edge! g "Madrid" "Rome" "Mad-R" 400)
-  (graph-add-edge! g "Munich" "Amsterdam" "M-Am" 450)
-  (graph-add-edge! g "Amsterdam" "Vienna" "Am-V" 500)
-  (graph-add-edge! g "Vienna" "Berlin" "V-Ber" 300)
-  (graph-add-edge! g "Lisbon" "Vienna" "L-V" 650)
-  (graph-add-edge! g "Vienna" "Biarritz" "V-B" 550)
-  (graph-add-edge! g "Berlin" "Rome" "Ber-R" 700)
-  (graph-add-edge! g "Rome" "Vienna" "R-V" 600)
+(defn get-all-cities [graph]
+  (keys @(:vertices graph)))
 
-  ; Scenario for Families of 3 aiming for a resort town with ideally 3 flights
-  (let [plans (find-and-sort-plans g "Munich" "Vienna" 9000 3)]
-    (println "Families of 3 aiming for a resort town with ideally 3 flights:")
-    (if (empty? plans)
-      (println "No valid plans found!")
-      (do
-        (print-reversed-plans plans))))
 
-  ; Scenario for Organized tours of 5 aiming for a landmark city with ideally 5 flights
-  (let [plans (find-and-sort-plans g "Munich" "Rome" 5000 5)]
-    (println "Organized tours of 5 aiming for a landmark city with ideally 5 flights:")
-    (if (empty? plans)
-      (println "No valid plans found!")
-      (do
-        (print-reversed-plans plans)))))
+(defn choose-city [prompt graph]
+  (let [cities (get-all-cities graph)]
+    (println prompt)
+    (doseq [[idx city] (map vector (range 1 (inc (count cities))) cities)]
+      (println (str idx ". " city " (" (get-city-type graph city) ")")))
+    (let [choice-str (read-line)
+          choice (if (re-matches #"\d+" choice-str) (Integer/parseInt choice-str) 0)]  ; Convert valid string to integer
+      (if (and (>= choice 1) (<= choice (count cities)))
+        (nth cities (dec choice))
+        (do
+          (println "Invalid choice. Please choose again.")
+          (recur prompt graph))))))
+
+
+
+(defn get-user-input [graph]
+  (let [start-city (choose-city "Where are you located?" graph)
+        end-city (choose-city "Where do you want to go to?" graph)]
+    (println "How much do you want to spend?")
+    (let [budget (Integer/parseInt (read-line))]
+      (println "How many flights can you suffer?")
+      (let [max-flights (Integer/parseInt (read-line))]
+        [start-city end-city budget max-flights]))))
+
+
+
+
+
+
+(defn main []
+  (let [g (make-graph)]
+        (graph-add-vertex! g "Munich" 48.1351 11.5820 "regular")
+        (graph-add-vertex! g "Biarritz" 43.4832 -1.5586 "resort")
+        (graph-add-vertex! g "Paris" 48.8566 2.3522 "resort")
+        (graph-add-vertex! g "Berlin" 52.5200 13.4050 "landmark")
+        (graph-add-vertex! g "Madrid" 40.4168 -3.7038 "regular")
+        (graph-add-vertex! g "Lisbon" 38.7223 -9.1393 "landmark")
+        (graph-add-vertex! g "Barcelona" 41.3851 2.1734 "regular")
+        (graph-add-vertex! g "Rome" 41.9028 12.4964 "landmark")
+        (graph-add-vertex! g "Amsterdam" 52.3676 4.9041 "regular")
+        (graph-add-vertex! g "Vienna" 48.2082 16.3738 "resort")
+
+        ; Adding edges/connections to make the routes more complex and potentially longer
+        (graph-add-edge! g "Munich" "Biarritz" "M-B" 500)
+        (graph-add-edge! g "Biarritz" "Paris" "B-P" 300)
+        (graph-add-edge! g "Munich" "Paris" "M-P" 700)
+        (graph-add-edge! g "Munich" "Berlin" "M-Ber" 400)
+        (graph-add-edge! g "Berlin" "Paris" "Ber-P" 500)
+        (graph-add-edge! g "Munich" "Madrid" "M-Mad" 900)
+        (graph-add-edge! g "Madrid" "Lisbon" "Mad-L" 200)
+        (graph-add-edge! g "Lisbon" "Paris" "L-P" 800)
+        (graph-add-edge! g "Munich" "Barcelona" "M-Bar" 600)
+        (graph-add-edge! g "Barcelona" "Rome" "Bar-R" 450)
+        (graph-add-edge! g "Madrid" "Rome" "Mad-R" 400)
+        (graph-add-edge! g "Munich" "Amsterdam" "M-Am" 450)
+        (graph-add-edge! g "Amsterdam" "Vienna" "Am-V" 500)
+        (graph-add-edge! g "Vienna" "Berlin" "V-Ber" 300)
+        (graph-add-edge! g "Lisbon" "Vienna" "L-V" 650)
+        (graph-add-edge! g "Vienna" "Biarritz" "V-B" 550)
+        (graph-add-edge! g "Berlin" "Rome" "Ber-R" 700)
+        (graph-add-edge! g "Rome" "Vienna" "R-V" 600)
+
+        (let [[start-city end-city budget max-flights] (get-user-input g)
+              plans (find-and-sort-plans g start-city end-city budget max-flights)]
+          (println (str "Searching for plans from " start-city " to " end-city " with a budget of " budget " and maximum " max-flights " flights:"))
+          (if (empty? plans)
+            (println "No valid plans found!")
+            (do
+              (print-reversed-plans plans))))))
+
+
+
+(main)
