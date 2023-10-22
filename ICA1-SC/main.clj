@@ -143,24 +143,26 @@
     @plans))
 
 (defn sort-plans [plans]
+  ;(println "Sorting plans..." plans)
   (sort-by (juxt (comp - :total-cost) (comp count :path)) plans))
 
 (defn remove-duplicate-paths [plans]
-  (let [seen-paths (atom #{})]
+  (let [seen-flights (atom #{})]
     (filter (fn [plan]
-              (let [path (:path plan)]
-                (if (contains? @seen-paths path)
+              (let [num-flights (- (count (:path plan)) 1)]
+                (if (contains? @seen-flights num-flights)
                   false
                   (do
-                    (swap! seen-paths conj path)
+                    (swap! seen-flights conj num-flights)
                     true))))
             plans)))
+
 
 (defn get-city-type [graph city-name]
   (let [cities-map @(:vertices graph)
         city-data (get cities-map city-name)]
     (if city-data
-      (:city-type city-data) ;; Convert the keyword to a string
+      (str(:city-type city-data)) ;; Convert the keyword to a string
       (do
         (println "City not found:" city-name)
         nil))))
@@ -169,14 +171,14 @@
 (defn find-and-sort-plans [graph start-label end-city-name budget max-flights]
   ; Get the city type for the given city name.
   (let [end-city-type  (get-city-type graph end-city-name)
-        traveler-type (if (= end-city-type :resort) :family :group)
+        traveler-type (if (= end-city-type "resort") "family" "group")
         ; Strictly set a hard flight limit based on traveler-type.
         hard-max-flights (case traveler-type
-                           :family 3
-                           :group 5
+                           "family" 3
+                           "group" 5
                            (throw (Exception. (str "Invalid traveler type detected: " traveler-type))))]
 
-    (println end-city-type, traveler-type, hard-max-flights)
+    (println end-city-type, traveler-type, hard-max-flights, end-city-name)
     ; Handle different traveler types
     (cond
       (and (= end-city-type  "resort" ) (> max-flights hard-max-flights))
@@ -188,20 +190,25 @@
     ; Reset the costs before starting the search
     (reset-costs! graph)
     ; Use the BFS function to find the plans with the hard-max-flights as the constraint
-    (let [raw-plans (bfs-find-plans graph start-label end-city-name budget hard-max-flights)
-          filtered-plans (filter
-                           (fn [plan]
-                             (and (<= (:total-cost plan) budget)
-                                  (< (count (:path plan)) hard-max-flights)))
-                           raw-plans)
-          sorted-plans (sort-plans filtered-plans)
-          distinct-plans (remove-duplicate-paths sorted-plans)
-          most-expensive-plan (first distinct-plans)
-          cheapest-plan (last distinct-plans)]
-      ; Check if the two plans are the same, if so, return only one
-      (if (= most-expensive-plan cheapest-plan)
-        [most-expensive-plan]
-        [most-expensive-plan cheapest-plan]))))
+
+    (let [raw-plans (bfs-find-plans graph start-label end-city-name budget hard-max-flights)]
+      ;(println "Raw plans:" raw-plans) ; Print raw plans here
+
+      (let [filtered-plans (filter
+                             (fn [plan]
+                               (and (<= (:total-cost plan) budget)
+                                    (< (- (count (:path plan)) 1) hard-max-flights)))
+                             raw-plans)]
+        ;(println "Filtered plans:" filtered-plans) ; Print filtered plans here
+
+        (let [sorted-plans (sort-plans filtered-plans)
+              distinct-plans (remove-duplicate-paths sorted-plans)
+              most-expensive-plan (first distinct-plans)
+              cheapest-plan (last distinct-plans)]
+          ; Check if the two plans are the same, if so, return only one
+          (if (= most-expensive-plan cheapest-plan)
+            [most-expensive-plan]
+            [most-expensive-plan cheapest-plan]))))))
 
 
 
@@ -278,7 +285,7 @@
   (graph-add-edge! g "Rome" "Vienna" "R-V" 600)
 
   ; Scenario for Families of 3 aiming for a resort town with ideally 3 flights
-  (let [plans (find-and-sort-plans g "Munich" "Vienna" 9000 4)]
+  (let [plans (find-and-sort-plans g "Munich" "Vienna" 9000 3)]
     (println "Families of 3 aiming for a resort town with ideally 3 flights:")
     (if (empty? plans)
       (println "No valid plans found!")
