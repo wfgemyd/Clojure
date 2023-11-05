@@ -62,7 +62,6 @@
 
 (defn reset-costs! [graph]
   (doseq [vertex (vals @(:vertices graph))]
-
     (dosync
       (ref-set (:cost-so-far vertex) 0))))
 
