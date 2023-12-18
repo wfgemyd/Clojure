@@ -1,0 +1,181 @@
+(ns airlines.core
+  (:require [clojure.core.matrix :as m]
+            [clojure.data.csv :as csv]
+            [clojure.java.io :as io]
+            [clojure.string :as str])
+  (:import (org.apache.commons.math3.distribution TDistribution)))
+
+; Loading and Preprocessing the CSV Data
+(defn read-csv [filename]
+  (with-open [reader (io/reader filename)]
+    (doall (csv/read-csv reader))))
+
+(defn parse-row [row]
+  {:full-name (nth row 0)
+   :yob (Integer/parseInt (nth row 1))
+   :departure (nth row 2)
+   :destination (nth row 3)
+   :paid (Double/parseDouble (nth row 4))})
+
+(defn process-csv [filename]
+  (map parse-row (rest (read-csv filename)))) ; 'rest' to skip header
+
+; Print Raw Data for Verification
+(defn print-raw-data [filename]
+  (let [data (process-csv filename)]
+    (doseq [row data]
+      (println row))))
+
+; Data Transformation Functions
+(defn split-name [record]
+  (let [[name surname] (str/split (:full-name record) #" ")]
+    (assoc record :name name :surname surname)))
+
+(defn calculate-age [record current-year]
+  (assoc record :age (- current-year (:yob record))))
+
+; Utility Functions
+(defn adult? [age] (>= age 18))
+
+; Identifying Families and Groups
+(defn identify-family-group [transformed-data]
+  (let [grouped-by-common-traits (group-by #(vector (:surname %) (:departure %) (:destination %) (:paid %)) transformed-data)]
+    (mapcat (fn [[_ group]]
+              (let [adults (filter #(adult? (:age %)) group)
+                    children (remove #(adult? (:age %)) group)]
+                (if (and (>= (count adults) 2) (>= (count children) 1))
+                  (map #(assoc % :relation "family") group)
+                  (map #(assoc % :relation "group") group))))
+            grouped-by-common-traits)))
+
+; Data Transformation Functions (Updated)
+(defn transform-data [dataset current-year]
+  (->> dataset
+       (map #(-> % (split-name) (calculate-age current-year)))
+       (identify-family-group)))
+
+(defn count-tickets-by-destination [dataset relation-type]
+  (frequencies (map :destination (filter #(= (:relation %) relation-type) dataset))))
+
+(defn mean [numbers]
+  (/ (reduce + numbers) (count numbers)))
+
+(defn mean-wealth-by-departure [dataset]
+  (let [grouped-by-departure (group-by :departure dataset)]
+    (into {} (map (fn [[departure records]]
+                    [departure (mean (map :paid records))])
+                  grouped-by-departure))))
+
+
+
+
+(defn print-record [record]
+  (println (str (:name record) ", "
+                (:surname record) ", "
+                (:yob record) ", "
+                (:departure record) ", "
+                (:destination record) ", "
+                (:paid record) ", "
+                (:relation record))))
+
+(defn print-transformed-data [transformed-data]
+  (doseq [record transformed-data]
+    (print-record record)))
+
+
+; Function to calculate total travelers and average prices for families and groups
+(defn calculate-travelers-and-prices [dataset]
+  (let [grouped-by-relation (group-by :relation dataset)
+        family-data (get grouped-by-relation "family" [])
+        group-data (get grouped-by-relation "group" [])]
+
+    ; Calculate total travelers for each category
+    (defn count-travelers [data]
+      (count data))
+
+    ; Calculate average price for each category
+    (defn average-price [data]
+      (mean (map :paid data)))
+
+    {:total-travelers-family (count-travelers family-data)
+     :average-price-family (average-price family-data)
+     :total-travelers-group (count-travelers group-data)
+     :average-price-group (average-price group-data)}))
+
+
+
+
+
+(defn construct-X-matrix [travelers-and-prices wealth-by-departure]
+  (let [average-price-family (:average-price-family travelers-and-prices)
+        average-price-group (:average-price-group travelers-and-prices)]
+    ;; Create a matrix with 2 rows and 3 columns (intercept, average-price-family, average-price-group)
+    (m/matrix [[1 average-price-family]
+               [1 average-price-group]])))
+
+
+(defn construct-y-vector [travelers-and-prices]
+  ;; Assuming travelers-and-prices contains a count of total travelers for 'family' and 'group'
+  (let [total-travelers-family (:total-travelers-family travelers-and-prices)
+        total-travelers-group (:total-travelers-group travelers-and-prices)]
+    ;; Combine total travelers into a vector using m/array
+    (m/array [total-travelers-family total-travelers-group])))
+
+
+  (defn regression [xs y]
+    (let [n (count y) ; Number of observations
+          k (count (first xs)) ; Number of predictors
+          nk (- n k 1) ; Degrees of freedom
+          tdist (TDistribution. (max 1 nk))]
+      (if (> nk 0)
+        (let [X (m/join [(m/reshape (repeat n 1.0) [n 1])] xs) ; Add intercept
+              XXt (m/mmul X (m/transpose X))
+              beta (-> XXt m/inverse (m/mmul X y))
+              yhat (m/mmul beta X)
+              res (m/sub y yhat)
+              SSR (m/dot res res) ; Sum of squared residuals
+              se (vec (map #(Math/sqrt (/ % n)) (m/diagonal XXt))) ; Standard errors
+              tscore (vec (map #(if (zero? %2) 0 (/ %1 %2)) beta se))] ; T-scores
+          {:coeffs beta
+           :se se
+           :t0 tscore
+           :df nk})
+        (throw (Exception. "Insufficient degrees of freedom for regression analysis.")))))
+
+(defn run-regression-analysis [transformed-data]
+  (let [travelers-and-prices (calculate-travelers-and-prices transformed-data)
+        wealth-by-departure (mean-wealth-by-departure transformed-data)
+        X (construct-X-matrix travelers-and-prices wealth-by-departure)
+        y (construct-y-vector travelers-and-prices)]
+    ;; Print the X matrix and y vector for visual verification
+    (println "X Matrix:" X)
+    (println "Y Vector:" y)
+    ;; Perform regression and print the result
+    (let [regression-result (regression X y)]
+      (println "Regression Result:" regression-result)
+      regression-result))) ;; Return the regression result
+
+
+
+; Main Execution (Updated)
+; Main Execution (Updated)
+(defn run-analysis [filename current-year]
+  (let [raw-data (process-csv filename)
+        transformed-data (transform-data raw-data current-year)
+        demand-by-destination (calculate-demand-by-destination transformed-data)
+        wealth-by-departure (calculate-wealth-by-departure transformed-data)
+        X (construct-X-matrix transformed-data wealth-by-departure)
+        y (construct-y-vector transformed-data)
+        regression-result (regression X y)
+        elasticity (calculate-elasticity regression-result)
+        revenue-calculation (calculate-revenue 1000 500 elasticity 0.1)]  ; Example values for revenue calculation
+    ;; Print results for verification
+    (println "Demand by Destination:" demand-by-destination)
+    (println "Wealth by Departure:" wealth-by-departure)
+    (println "Regression Result:" regression-result)
+    (println "Elasticity:" elasticity)
+    (println "Revenue Calculation:" revenue-calculation)))
+
+  (run-analysis "F:/clojure-course/airlines/src/airlines/sales_team_4.csv" 2023)
+
+
